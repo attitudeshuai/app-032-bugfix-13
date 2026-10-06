@@ -159,7 +159,7 @@ function exportCsv() {
             <td class="num mono">{{ r.height.toFixed(1) }}</td>
             <td class="num mono">{{ r.diameter.toFixed(1) }}</td>
             <td class="num mono">{{ r.kinds }}</td>
-            <td class="num mono">{{ (r.perPiece / 1e6).toFixed(4) }}</td>
+            <td class="num mono">{{ (r.perPiece / 1e6).toFixed(3) }}</td>
             <td class="num mono">{{ r.qty }}</td>
             <td class="num mono">{{ r.areaM2.toFixed(3) }}</td>
           </tr>

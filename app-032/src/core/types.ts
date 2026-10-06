@@ -112,7 +112,7 @@ export interface Panel {
   rawWidthTopMm: number
   rawWidthBottomMm: number
   rawHeightMm: number
-  /** 圆形/正多边形裁片半径（净，不含缝份） */
+  /** 圆形裁片净半径 / 正多边形裁片净外接圆半径（mm，不含缝份） */
   radiusMm?: number
   /** 正多边形边数（顶/底盖为多边形时） */
   polySides?: number

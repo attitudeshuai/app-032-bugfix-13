@@ -1,12 +1,14 @@
 <script setup lang="ts">
-/** 裁片图：实线为裁切线，虚线为净样（缝份折线），标注尺寸与对位标记 */
+/** 裁片图：实线为裁切线，绿色虚线为净样（缝份折线，跟随当前缝份），标注尺寸与对位标记 */
 import { computed } from 'vue'
 import type { Panel } from '../core/types'
+import { panelCircle, panelCutBox, panelCutPoints, panelNetPoints } from '../core/panels'
 
 const props = defineProps<{ panel: Panel; showMarks?: boolean; showDims?: boolean }>()
 
-const cutW = computed(() => Math.max(props.panel.widthTopMm, props.panel.widthBottomMm))
-const cutH = computed(() => props.panel.heightMm)
+const box = computed(() => panelCutBox(props.panel))
+const cutW = computed(() => box.value.wMm)
+const cutH = computed(() => box.value.hMm)
 const pad = 22
 const viewBox = computed(() => `${-pad} ${-pad} ${cutW.value + pad * 2} ${cutH.value + pad * 2}`)
 const fs = computed(() => Math.max(3, Math.min(8, Math.max(cutW.value, cutH.value) / 26)))
@@ -14,72 +16,61 @@ const sw = computed(() => Math.max(0.25, Math.max(cutW.value, cutH.value) / 420)
 
 const sy = (y: number) => cutH.value - y
 
-const cutPoints = computed(() => {
-  const p = props.panel
-  const W = cutW.value
-  const H = cutH.value
-  if (p.shape === 'circle' && !p.polySides) return ''
-  if (p.shape === 'circle' && p.polySides) {
-    const n = p.polySides
-    const R = W / 2 / Math.cos(Math.PI / n)
-    return Array.from({ length: n }, (_, k) => {
-      const a = -Math.PI / 2 + (2 * Math.PI * k) / n
-      return `${(W / 2 + R * Math.cos(a)).toFixed(2)},${(H / 2 + R * Math.sin(a)).toFixed(2)}`
-    }).join(' ')
-  }
-  if (p.shape === 'triangle') {
-    return `0,${H} ${W},${H} ${W / 2},0`
-  }
-  const wt = p.widthTopMm
-  const wb = p.widthBottomMm
-  return `${(W - wb) / 2},${H} ${(W + wb) / 2},${H} ${(W + wt) / 2},0 ${(W - wt) / 2},0`
-})
-
-const netPoints = computed(() => {
-  const W = cutW.value
-  const H = cutH.value
-  return `5,5 ${(W - 5).toFixed(2)},5 ${(W - 5).toFixed(2)},${(H - 5).toFixed(2)} 5,${(H - 5).toFixed(2)}`
-})
+// 裁切线与净样线同源于 core/panels（与 1:1 图纸是同一份结论）
+const cutPts = computed(() => panelCutPoints(props.panel))
+const netPts = computed(() => panelNetPoints(props.panel))
+const cutCircle = computed(() => panelCircle(props.panel, false))
+const netCircle = computed(() => panelCircle(props.panel, true))
 
 const markList = computed(() =>
   (props.panel.marksMm || []).map((m, i) => ({ ...m, n: i + 1, cx: m.x, cy: sy(m.y) }))
 )
+
+/** 净尺寸说明（按形状给出净样关键尺寸，与裁片页「展开净尺寸」行一致） */
+const netCaption = computed(() => {
+  const p = props.panel
+  if (p.shape === 'circle' && !p.polySides) return `净 ⌀${p.rawWidthTopMm.toFixed(1)}`
+  if (p.shape === 'circle' && p.polySides) {
+    return `净对边距 ${p.rawWidthTopMm.toFixed(1)}（正${p.polySides}边形）`
+  }
+  return `净 上${p.rawWidthTopMm.toFixed(1)}/下${p.rawWidthBottomMm.toFixed(1)}×高${p.rawHeightMm.toFixed(1)}`
+})
 </script>
 
 <template>
   <svg class="panel-svg" :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
     <!-- 裁切线 -->
     <polygon
-      v-if="panel.shape !== 'circle' || panel.polySides"
-      :points="cutPoints"
+      v-if="cutPts"
+      :points="cutPts"
       fill="rgba(179,36,31,0.06)"
       stroke="#b3241f"
       :stroke-width="sw * 1.6"
     />
     <circle
-      v-else
-      :cx="cutW / 2"
-      :cy="cutH / 2"
-      :r="cutW / 2"
+      v-if="cutCircle"
+      :cx="cutCircle.cx"
+      :cy="cutCircle.cy"
+      :r="cutCircle.r"
       fill="rgba(179,36,31,0.06)"
       stroke="#b3241f"
       :stroke-width="sw * 1.6"
     />
 
-    <!-- 缝份内缩线（净样）为虚线 -->
+    <!-- 净样（缝份折到背面后的净尺寸线），绿色虚线，跟随当前缝份 -->
     <polygon
-      v-if="panel.shape !== 'circle' || panel.polySides"
-      :points="netPoints"
+      v-if="netPts"
+      :points="netPts"
       fill="none"
       stroke="#2f7a63"
       :stroke-width="sw * 1.2"
       stroke-dasharray="4 2.5"
     />
     <circle
-      v-else
-      :cx="cutW / 2"
-      :cy="cutH / 2"
-      :r="panel.rawWidthTopMm / 2"
+      v-if="netCircle"
+      :cx="netCircle.cx"
+      :cy="netCircle.cy"
+      :r="netCircle.r"
       fill="none"
       stroke="#2f7a63"
       :stroke-width="sw * 1.2"
@@ -121,8 +112,7 @@ const markList = computed(() =>
     </g>
 
     <text :x="cutW / 2" :y="cutH / 2 + fs * 0.5" text-anchor="middle" :font-size="fs * 1.05" class="net-label">
-      净 {{ panel.rawWidthTopMm.toFixed(1) }}×{{ panel.rawHeightMm.toFixed(1) }} + 缝份
-      {{ panel.seamAllowanceMm }}×2
+      {{ netCaption }} + 缝份 {{ panel.seamAllowanceMm }}×2
     </text>
   </svg>
 </template>

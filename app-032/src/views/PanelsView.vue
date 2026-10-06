@@ -101,7 +101,7 @@ function exportCsv() {
               <td class="mono">{{ shapeName(p.shape) }} · +{{ p.seamAllowanceMm }}×2</td>
             </tr>
             <tr v-if="p.radiusMm">
-              <td>净半径</td>
+              <td>{{ p.polySides ? '净外接圆半径' : '净半径' }}</td>
               <td class="mono">{{ p.radiusMm.toFixed(1) }}mm</td>
             </tr>
           </tbody>
@@ -146,7 +146,7 @@ function exportCsv() {
     </section>
 
     <ChecksPanel
-      :checks="full.checks.filter((c) => ['CHK-03', 'CHK-05', 'CHK-06'].includes(c.id))"
+      :checks="full.checks.filter((c) => ['CHK-03', 'CHK-05', 'CHK-06', 'CHK-09'].includes(c.id))"
       :elapsed-ms="full.elapsedMs"
       title="裁片与分页自检"
     />

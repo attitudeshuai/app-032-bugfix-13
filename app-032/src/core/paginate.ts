@@ -5,7 +5,7 @@
  */
 import type { FrameMember, Lantern, Panel } from './types'
 import { buildFrame } from './frame'
-import { buildPanels } from './panels'
+import { buildPanels, panelCutBox } from './panels'
 
 export type PaperSize = 'A4' | 'A3'
 
@@ -154,13 +154,14 @@ export function paginate(l: Lantern, opts: LoftOptions): Sheet[] {
 
   if (opts.includePanels) {
     for (const p of buildPanels(l).panels) {
-      const w = p.widthTopMm + PANEL_PAD_X * 2
-      const h = p.heightMm + PANEL_PAD_BOTTOM
+      const box = panelCutBox(p)
+      const w = box.wMm + PANEL_PAD_X * 2
+      const h = box.hMm + PANEL_PAD_BOTTOM
       if (w > contentW + EPS || h > contentH + EPS) {
         // 超出可打印区：整块单独一页居中输出，绝不拆分
         dropEmptySheet()
         const s = startSheet(
-          `裁片「${p.label}」裁切尺寸 ${f1(p.widthTopMm)}×${f1(p.heightMm)}mm 超出 ${opts.paper} 可打印区（${f1(contentW)}×${f1(contentH)}mm）：已整块居中输出、未拆分，请改用 A3 或按拼接编号手工接纸。`
+          `裁片「${p.label}」裁切尺寸 ${f1(box.wMm)}×${f1(box.hMm)}mm 超出 ${opts.paper} 可打印区（${f1(contentW)}×${f1(contentH)}mm）：已整块居中输出、未拆分，请改用 A3 或按拼接编号手工接纸。`
         )
         s.items.push({
           type: 'panel',

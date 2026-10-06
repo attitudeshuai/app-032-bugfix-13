@@ -23,6 +23,7 @@ import {
 import { groupMembers } from '../core/frame'
 import { kindName, shapeName } from '../core/exporter'
 import { coveringLabel, kindLabel, styleLabel } from '../core/craft'
+import { panelCircle, panelCutBox, panelCutPoints, panelNetPoints, rimNetSizeMm } from '../core/panels'
 import type { Panel } from '../core/types'
 
 type PrintMode = 'loft' | 'frame' | 'labels'
@@ -71,11 +72,16 @@ const frameGroups = computed(() => (full.value ? groupMembers(full.value.frame.m
 
 const pageDims = computed(() => (mode.value === 'loft' ? PAPER_DIMS[opts.paper] : PAPER_DIMS.A4))
 
+/** 顶/底盖口沿净尺寸（与裁片页同一取整规则：毫米取整；多边形为对边距） */
 const coverDims = computed(() => {
   const g = full.value?.frame.geometry
-  if (!g) return { topMm: 0, botMm: 0 }
+  if (!g) return { topMm: 0, botMm: 0, polygon: false }
   const s = g.sections
-  return { topMm: s[s.length - 1].radiusMm * 2, botMm: s[0].radiusMm * 2 }
+  return {
+    topMm: rimNetSizeMm(s[s.length - 1].radiusMm, g.polygon, g.n),
+    botMm: rimNetSizeMm(s[0].radiusMm, g.polygon, g.n),
+    polygon: g.polygon
+  }
 })
 
 /** 动态注入 @page 尺寸，保证 1:1（含 A3 横向页面尺寸） */
@@ -117,51 +123,16 @@ const PANEL_PAD_TOP = 8
 
 function panelBox(it: SheetItemPanel) {
   const p = it.panel
+  const box = panelCutBox(p)
   return {
     x: it.xMm + PANEL_PAD_LEFT,
     y: it.yMm + PANEL_PAD_TOP,
-    w: Math.max(p.widthTopMm, p.widthBottomMm),
-    h: p.heightMm
+    w: box.wMm,
+    h: box.hMm
   }
 }
 
 const isPlainCircle = (p: Panel) => p.shape === 'circle' && !p.polySides
-
-function polygonPoints(n: number, circR: number, cx: number, cy: number): string {
-  return Array.from({ length: n }, (_, k) => {
-    const a = -Math.PI / 2 + (2 * Math.PI * k) / n
-    return `${(cx + circR * Math.cos(a)).toFixed(2)},${(cy + circR * Math.sin(a)).toFixed(2)}`
-  }).join(' ')
-}
-
-/** 裁切线（原点在裁片外接框左上角，y 向下，单位 mm，1:1） */
-function cutPoints(p: Panel, w: number, h: number): string {
-  if (p.shape === 'circle' && p.polySides) {
-    return polygonPoints(p.polySides, w / 2 / Math.cos(Math.PI / p.polySides), w / 2, h / 2)
-  }
-  if (p.shape === 'triangle') return `0,${h} ${w},${h} ${w / 2},0`
-  const { widthTopMm: wt, widthBottomMm: wb } = p
-  return `${(w - wb) / 2},${h} ${(w + wb) / 2},${h} ${(w + wt) / 2},0 ${(w - wt) / 2},0`
-}
-
-/** 缝份折线（净样），相对裁切线向内缩 seamAllowanceMm */
-function netPoints(p: Panel, w: number, h: number): string {
-  const s = p.seamAllowanceMm
-  if (p.shape === 'circle' && p.polySides) {
-    const raw = p.rawWidthTopMm
-    return polygonPoints(p.polySides, raw / 2 / Math.cos(Math.PI / p.polySides), w / 2, h / 2)
-  }
-  if (p.shape === 'triangle') {
-    const rw = p.rawWidthBottomMm
-    const rh = p.rawHeightMm
-    return `${(w - rw) / 2},${h - s} ${(w + rw) / 2},${h - s} ${w / 2},${h - s - rh}`
-  }
-  const yb = h - s
-  const yt = h - s - p.rawHeightMm
-  return `${(w - p.rawWidthBottomMm) / 2},${yb} ${(w + p.rawWidthBottomMm) / 2},${yb} ${
-    (w + p.rawWidthTopMm) / 2
-  },${yt} ${(w - p.rawWidthTopMm) / 2},${yt}`
-}
 
 function markList(it: SheetItemPanel) {
   const b = panelBox(it)
@@ -265,7 +236,7 @@ function today(): string {
         <div class="stat"><span>裁片类型</span><b>{{ full.panels.panels.length }} 种 / {{ full.panels.totalQty }} 块</b></div>
         <div class="stat"><span>裁片不跨页断言</span><b :class="splitCheck.pass ? 'ok' : 'bad'">{{ splitCheck.pass ? '通过' : '失败' }}</b></div>
         <div class="stat"><span>超区整块输出</span><b>{{ splitCheck.overflow }} 块</b></div>
-        <div class="stat"><span>底盖净直径</span><b>{{ f1(coverDims.botMm) }} mm</b></div>
+        <div class="stat"><span>底盖{{ coverDims.polygon ? '净对边距' : '净直径' }}</span><b>{{ f1(coverDims.botMm) }} mm</b></div>
       </section>
       <p v-if="mode === 'loft'" class="sub detail">{{ splitCheck.detail }}</p>
     </section>
@@ -382,7 +353,7 @@ function today(): string {
               </text>
 
               <text class="cal-note" :x="it.xMm" :y="it.yMm + 200">
-                ④ 本灯实际口径：底盖净直径 {{ f1(coverDims.botMm) }}mm、顶盖净直径 {{ f1(coverDims.topMm) }}mm ——
+                ④ 本灯实际口径：底盖{{ coverDims.polygon ? '净对边距' : '净直径' }} {{ f1(coverDims.botMm) }}mm、顶盖{{ coverDims.polygon ? '净对边距' : '净直径' }} {{ f1(coverDims.topMm) }}mm（口沿按毫米取整）——
                 在「蒙面裁片 1:1」页按同一比例绘制，可实测对照（误差 ≤ 1mm）。
               </text>
               <text class="cal-note" :x="it.xMm" :y="it.yMm + 210">
@@ -412,12 +383,12 @@ function today(): string {
                   v-if="isPlainCircle(asPanel(it).panel)"
                   :cx="panelBox(asPanel(it)).x + panelBox(asPanel(it)).w / 2"
                   :cy="panelBox(asPanel(it)).y + panelBox(asPanel(it)).h / 2"
-                  :r="panelBox(asPanel(it)).w / 2"
+                  :r="panelCircle(asPanel(it).panel, false)?.r"
                   class="cut-area"
                 />
                 <polygon
                   v-else
-                  :points="cutPoints(asPanel(it).panel, panelBox(asPanel(it)).w, panelBox(asPanel(it)).h)"
+                  :points="panelCutPoints(asPanel(it).panel)"
                   :transform="`translate(${panelBox(asPanel(it)).x} ${panelBox(asPanel(it)).y})`"
                   class="cut-area"
                 />
@@ -426,12 +397,12 @@ function today(): string {
                   v-if="isPlainCircle(asPanel(it).panel)"
                   :cx="panelBox(asPanel(it)).x + panelBox(asPanel(it)).w / 2"
                   :cy="panelBox(asPanel(it)).y + panelBox(asPanel(it)).h / 2"
-                  :r="asPanel(it).panel.rawWidthTopMm / 2"
+                  :r="panelCircle(asPanel(it).panel, true)?.r"
                   class="net-line"
                 />
                 <polygon
                   v-else
-                  :points="netPoints(asPanel(it).panel, panelBox(asPanel(it)).w, panelBox(asPanel(it)).h)"
+                  :points="panelNetPoints(asPanel(it).panel)"
                   :transform="`translate(${panelBox(asPanel(it)).x} ${panelBox(asPanel(it)).y})`"
                   class="net-line"
                 />

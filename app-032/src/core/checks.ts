@@ -3,7 +3,7 @@
  * 每次参数变化都会重算全部几何并跑一遍断言，结果直接显示在界面上。
  */
 import type { CheckResult, Lantern } from './types'
-import { bodySurfaceArea, polygonEdge, ringPerimeter, segmentInfos } from './geometry'
+import { bodySurfaceArea, polygonEdge, polyhedronInfo, ringPerimeter, segmentInfos } from './geometry'
 import { buildFrame, type FrameResult } from './frame'
 import { buildPanels, panelNetArea, type PanelResult } from './panels'
 import { computeBatch, computeMaterials, type BatchMaterials, type SingleLightMaterials } from './materials'
@@ -69,7 +69,20 @@ function runChecks(
   }
 
   // ---- CHK-02 竖篾长度与分段高度累计 ----
-  {
+  if (g.kind === 'polyhedron') {
+    // 多面体没有分段母线：棱篾净长应等于棱长，数量等于棱数（四面体 6 棱 / 八面体 12 棱）
+    const info = polyhedronInfo(g)
+    const rib = frame.members.find((m) => m.kind === 'vertical')
+    const edgeCount = info.kind === 'tetra' ? 6 : 12
+    const pass = !!rib && Math.abs(rib.rawLengthMm - info.edgeMm) <= 0.1 && rib.qty === edgeCount
+    out.push({
+      id: 'CHK-02',
+      title: '棱篾净长 = 棱长，数量 = 棱数（多面体）',
+      pass,
+      value: `棱长 ${f1(info.edgeMm)}mm × ${edgeCount} 根`,
+      detail: `正${info.kind === 'tetra' ? '四' : '八'}面体：棱篾净长 ${f1(rib ? rib.rawLengthMm : 0)}mm = 棱长 ${f1(info.edgeMm)}mm（由外接球 ⌀${f1(info.circumR * 2)}mm 推算），共 ${edgeCount} 根棱`
+    })
+  } else {
     const segs = segmentInfos(g)
     const sumH = segs.reduce((s, x) => s + x.heightMm, 0)
     const sumSlant = segs.reduce((s, x) => s + x.slantMm, 0)
@@ -104,7 +117,7 @@ function runChecks(
       value: `${panels.panels.length - bad.length}/${panels.panels.length} 种裁片通过`,
       detail:
         bad.length === 0
-          ? `全部 ${panels.panels.length} 种裁片上/下/高三个尺寸均等于净尺寸 + ${f1(s)}×2mm；裁片图以红色虚线绘制缝份折线`
+          ? `全部 ${panels.panels.length} 种裁片上/下/高三个尺寸均等于净尺寸 + ${f1(s)}×2mm；裁片图以绿色虚线绘制净样（缝份折线），跟随当前缝份`
           : `超差裁片：${bad.map((p) => p.label).join('、')}`
     })
   }
@@ -188,6 +201,45 @@ function runChecks(
       pass,
       value: `${elapsedMs.toFixed(1)}ms`,
       detail: `${l.divisions} 等分 × ${l.layers.length} 层：构件 ${frame.totalQty} 根、裁片 ${panels.totalQty} 块、图纸 ${sheets.length} 页，全流程耗时 ${elapsedMs.toFixed(1)}ms（含分页）`
+    })
+  }
+
+  // ---- CHK-09 裁片一致性：净/裁切两套数，四处页面同源 ----
+  {
+    const s = Math.max(0, l.seamAllowanceMm)
+    const net = panels.netAreaMm2
+    const cut = panels.cutAreaMm2
+    // 净尺寸与裁切尺寸是两套数：裁切 = 净 + 缝份×2（盖片口沿按毫米取整后同样成立）
+    const dimsTwoSets = panels.panels.every(
+      (p) =>
+        Math.abs(p.widthTopMm - (p.rawWidthTopMm + 2 * s)) <= 0.06 &&
+        Math.abs(p.widthBottomMm - (p.rawWidthBottomMm + 2 * s)) <= 0.06 &&
+        Math.abs(p.heightMm - (p.rawHeightMm + 2 * s)) <= 0.06
+    )
+    // 缝份为 0 时裁切尺寸与净尺寸完全相等（仍是两行数，不写成一个数）
+    const zeroSeamConsistent =
+      s > 0 ||
+      panels.panels.every(
+        (p) =>
+          p.widthTopMm === p.rawWidthTopMm &&
+          p.widthBottomMm === p.rawWidthBottomMm &&
+          p.heightMm === p.rawHeightMm
+      )
+    // 含缝份面积按裁切尺寸单独算：缝份 > 0 时必须严格大于净面积，为 0 时两者相等
+    const areaSeparate = s > 0 ? cut > net : Math.abs(cut - net) <= 1e-6
+    // 材料页用量与裁片页面积同源（含缝份 / 净面积各对得上）
+    const matsSameSource =
+      Math.abs(materials.coveringM2 - cut / 1e6) <= 0.0011 &&
+      Math.abs(materials.coveringNetM2 - net / 1e6) <= 0.0011
+    const pass = dimsTwoSets && zeroSeamConsistent && areaSeparate && matsSameSource
+    out.push({
+      id: 'CHK-09',
+      title: '裁片一致性：净/裁切两套尺寸，含缝份面积按裁切尺寸单独算',
+      pass,
+      value: `净 ${f3(net / 1e6)}m² / 含缝份 ${f3(cut / 1e6)}m²`,
+      detail: pass
+        ? `裁片页净尺寸与裁切尺寸为两套数（缝份 ${f1(s)}mm×2，盖片口沿按毫米取整）；含缝份面积 ${f3(cut / 1e6)}m² 按裁切尺寸单独累计，材料页蒙面用量 ${f3(materials.coveringM2)}m² 与裁片页、裁片图、1:1 图纸同源；缝份为 0 时裁切尺寸与净尺寸完全相等`
+        : `不一致项：两套尺寸${dimsTwoSets ? '✓' : '✗'}、零缝份相等${zeroSeamConsistent ? '✓' : '✗'}、面积分算${areaSeparate ? '✓' : '✗'}、材料同源${matsSameSource ? '✓' : '✗'}（净 ${f3(net / 1e6)}m² / 含缝份 ${f3(cut / 1e6)}m² / 材料页 ${f3(materials.coveringM2)}m²）`
     })
   }
 
