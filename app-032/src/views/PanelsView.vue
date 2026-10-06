@@ -9,6 +9,7 @@ import { DEFAULT_LOFT_OPTIONS } from '../core/paginate'
 import { bodySurfaceArea } from '../core/geometry'
 import { downloadText, panelsCsv, shapeName } from '../core/exporter'
 import { coveringSpec } from '../core/craft'
+import { panelCutArea, panelNetArea } from '../core/panels'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,11 +89,27 @@ function exportCsv() {
         </div>
         <table class="dims">
           <tbody>
-            <tr>
+            <tr v-if="p.polySides">
+              <td>展开净尺寸</td>
+              <td class="mono">净对边距 {{ p.rawWidthTopMm.toFixed(1) }}mm（正 {{ p.polySides }} 边形）</td>
+            </tr>
+            <tr v-else-if="p.shape === 'circle'">
+              <td>展开净尺寸</td>
+              <td class="mono">净直径 {{ p.rawWidthTopMm.toFixed(1) }}mm</td>
+            </tr>
+            <tr v-else>
               <td>展开净尺寸</td>
               <td class="mono">上 {{ p.rawWidthTopMm.toFixed(1) }} / 下 {{ p.rawWidthBottomMm.toFixed(1) }} × 高 {{ p.rawHeightMm.toFixed(1) }}</td>
             </tr>
-            <tr class="cut">
+            <tr class="cut" v-if="p.polySides">
+              <td>裁切尺寸</td>
+              <td class="mono">裁切对边距 {{ p.widthTopMm.toFixed(1) }}mm = 净对边距 + {{ p.seamAllowanceMm }}×2</td>
+            </tr>
+            <tr class="cut" v-else-if="p.shape === 'circle'">
+              <td>裁切尺寸</td>
+              <td class="mono">裁切直径 {{ p.widthTopMm.toFixed(1) }}mm = 净直径 + {{ p.seamAllowanceMm }}×2</td>
+            </tr>
+            <tr class="cut" v-else>
               <td>裁切尺寸</td>
               <td class="mono">上 {{ p.widthTopMm.toFixed(1) }} / 下 {{ p.widthBottomMm.toFixed(1) }} × 高 {{ p.heightMm.toFixed(1) }}</td>
             </tr>
@@ -101,8 +118,12 @@ function exportCsv() {
               <td class="mono">{{ shapeName(p.shape) }} · +{{ p.seamAllowanceMm }}×2</td>
             </tr>
             <tr v-if="p.radiusMm">
-              <td>净半径</td>
+              <td>{{ p.polySides ? '净外接圆半径' : '净半径' }}</td>
               <td class="mono">{{ p.radiusMm.toFixed(1) }}mm</td>
+            </tr>
+            <tr>
+              <td>单块面积</td>
+              <td class="mono">净 {{ (panelNetArea(p) / 1e6).toFixed(3) }} / 含缝份 {{ (panelCutArea(p) / 1e6).toFixed(3) }} m²</td>
             </tr>
           </tbody>
         </table>

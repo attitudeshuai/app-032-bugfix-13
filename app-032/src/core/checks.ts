@@ -97,15 +97,41 @@ function runChecks(
         Math.abs(p.widthBottomMm - (p.rawWidthBottomMm + 2 * s)) > 0.06 ||
         Math.abs(p.heightMm - (p.rawHeightMm + 2 * s)) > 0.06
     )
+    // 缝份为 0 时裁切尺寸必须与净尺寸逐位相同；净/裁两套数不允许混写
+    const seamZeroMismatch =
+      s === 0
+        ? panels.panels.filter(
+            (p) =>
+              p.widthTopMm !== p.rawWidthTopMm ||
+              p.widthBottomMm !== p.rawWidthBottomMm ||
+              p.heightMm !== p.rawHeightMm
+          )
+        : []
+    // 含缝份面积必须按裁切尺寸单独算：缝份 > 0 时不允许与净面积写成同一个数
+    const areaFrozen =
+      s > 0 && panels.cutAreaMm2 > 0 && Math.abs(panels.cutAreaMm2 - panels.netAreaMm2) < 1e-6
+    const pass = bad.length === 0 && seamZeroMismatch.length === 0 && !areaFrozen
     out.push({
       id: 'CHK-03',
       title: '裁片尺寸 = 展开净尺寸 + 缝份 × 2（每边）',
-      pass: bad.length === 0,
-      value: `${panels.panels.length - bad.length}/${panels.panels.length} 种裁片通过`,
+      pass,
+      value: `${panels.panels.length - bad.length - seamZeroMismatch.length}/${panels.panels.length} 种裁片通过`,
       detail:
-        bad.length === 0
-          ? `全部 ${panels.panels.length} 种裁片上/下/高三个尺寸均等于净尺寸 + ${f1(s)}×2mm；裁片图以红色虚线绘制缝份折线`
-          : `超差裁片：${bad.map((p) => p.label).join('、')}`
+        pass
+          ? `全部 ${panels.panels.length} 种裁片上/下/高三个尺寸均等于净尺寸 + ${f1(s)}×2mm（口沿按 mm 取整）；图上绿色虚线画在净样上并随当前缝份移动；净面积 ${f3(
+              panels.netAreaMm2 / 1_000_000
+            )}m² 与含缝份面积 ${f3(panels.cutAreaMm2 / 1_000_000)}m² 为两套数${
+              s === 0 ? '；缝份为 0，裁切尺寸与净尺寸完全一致' : ''
+            }`
+          : [
+              bad.length ? `超差裁片：${bad.map((p) => p.label).join('、')}` : '',
+              seamZeroMismatch.length
+                ? `缝份为 0 但裁切/净尺寸不一致：${seamZeroMismatch.map((p) => p.label).join('、')}`
+                : '',
+              areaFrozen ? '含缝份面积与净面积写成了同一个数（未按裁切尺寸重算）' : ''
+            ]
+              .filter(Boolean)
+              .join('；')
     })
   }
 

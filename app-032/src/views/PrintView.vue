@@ -112,16 +112,21 @@ function doPrint() {
 const asPanel = (it: SheetItem): SheetItemPanel => it as SheetItemPanel
 const asStrip = (it: SheetItem): SheetItemStrip => it as SheetItemStrip
 
-const PANEL_PAD_LEFT = 4
 const PANEL_PAD_TOP = 8
+
+/** 裁片实际占位：正多边形盖片按外接圆直径（角部超出对边距） */
+function panelSpan(p: Panel): number {
+  return p.polySides ? p.widthTopMm / Math.cos(Math.PI / p.polySides) : Math.max(p.widthTopMm, p.widthBottomMm)
+}
 
 function panelBox(it: SheetItemPanel) {
   const p = it.panel
+  const span = panelSpan(p)
   return {
-    x: it.xMm + PANEL_PAD_LEFT,
+    x: it.xMm + (it.wMm - span) / 2,
     y: it.yMm + PANEL_PAD_TOP,
-    w: Math.max(p.widthTopMm, p.widthBottomMm),
-    h: p.heightMm
+    w: span,
+    h: p.polySides ? span : p.heightMm
   }
 }
 
@@ -402,10 +407,24 @@ function today(): string {
             <g v-else-if="it.type === 'panel'">
               <g>
                 <text class="panel-cap" :x="asPanel(it).xMm" :y="asPanel(it).yMm + 4">
-                  {{ asPanel(it).panel.label }} ×{{ asPanel(it).panel.qty }} 块 ·
-                  净 {{ f1(asPanel(it).panel.rawWidthTopMm) }}/{{ f1(asPanel(it).panel.rawWidthBottomMm) }}×{{
-                    f1(asPanel(it).panel.rawHeightMm)
-                  }}mm + 缝份 {{ asPanel(it).panel.seamAllowanceMm }}×2 · 实线=裁切线 虚线=净样 十字=对位
+                  <template v-if="asPanel(it).panel.polySides">
+                    {{ asPanel(it).panel.label }} ×{{ asPanel(it).panel.qty }} 块 ·
+                    净对边距 {{ f1(asPanel(it).panel.rawWidthTopMm) }}mm + 缝份
+                    {{ asPanel(it).panel.seamAllowanceMm }}×2 = 裁切对边距
+                    {{ f1(asPanel(it).panel.widthTopMm) }}mm · 实线=裁切线 虚线=净样 十字=对位
+                  </template>
+                  <template v-else-if="isPlainCircle(asPanel(it).panel)">
+                    {{ asPanel(it).panel.label }} ×{{ asPanel(it).panel.qty }} 块 ·
+                    净直径 {{ f1(asPanel(it).panel.rawWidthTopMm) }}mm + 缝份
+                    {{ asPanel(it).panel.seamAllowanceMm }}×2 = 裁切直径
+                    {{ f1(asPanel(it).panel.widthTopMm) }}mm · 实线=裁切线 虚线=净样 十字=对位
+                  </template>
+                  <template v-else>
+                    {{ asPanel(it).panel.label }} ×{{ asPanel(it).panel.qty }} 块 ·
+                    净 {{ f1(asPanel(it).panel.rawWidthTopMm) }}/{{ f1(asPanel(it).panel.rawWidthBottomMm) }}×{{
+                      f1(asPanel(it).panel.rawHeightMm)
+                    }}mm + 缝份 {{ asPanel(it).panel.seamAllowanceMm }}×2 · 实线=裁切线 虚线=净样 十字=对位
+                  </template>
                 </text>
 
                 <circle
@@ -494,10 +513,22 @@ function today(): string {
                     text-anchor="middle"
                     class="net-label"
                   >
-                    净 {{ f1(asPanel(it).panel.rawWidthTopMm) }}×{{ f1(asPanel(it).panel.rawHeightMm) }} + 缝份
-                    {{ asPanel(it).panel.seamAllowanceMm }}×2 = 裁切 {{ f1(asPanel(it).panel.widthTopMm) }}×{{
-                      f1(asPanel(it).panel.heightMm)
-                    }}
+                    <template v-if="asPanel(it).panel.polySides">
+                      净对边距 {{ f1(asPanel(it).panel.rawWidthTopMm) }} + 缝份
+                      {{ asPanel(it).panel.seamAllowanceMm }}×2 = 裁切对边距
+                      {{ f1(asPanel(it).panel.widthTopMm) }}
+                    </template>
+                    <template v-else-if="isPlainCircle(asPanel(it).panel)">
+                      净直径 {{ f1(asPanel(it).panel.rawWidthTopMm) }} + 缝份
+                      {{ asPanel(it).panel.seamAllowanceMm }}×2 = 裁切直径
+                      {{ f1(asPanel(it).panel.widthTopMm) }}
+                    </template>
+                    <template v-else>
+                      净 {{ f1(asPanel(it).panel.rawWidthTopMm) }}×{{ f1(asPanel(it).panel.rawHeightMm) }} + 缝份
+                      {{ asPanel(it).panel.seamAllowanceMm }}×2 = 裁切 {{ f1(asPanel(it).panel.widthTopMm) }}×{{
+                        f1(asPanel(it).panel.heightMm)
+                      }}
+                    </template>
                   </text>
                   <text
                     :x="panelBox(asPanel(it)).x + panelBox(asPanel(it)).w / 2"
@@ -629,8 +660,12 @@ function today(): string {
           </div>
           <div class="lb-rows">
             <div><span>形状</span><b>{{ shapeName(p.shape) }}{{ p.polySides ? `（正 ${p.polySides} 边形）` : '' }}</b></div>
-            <div><span>净尺寸</span><b>上 {{ f1(p.rawWidthTopMm) }} / 下 {{ f1(p.rawWidthBottomMm) }} × 高 {{ f1(p.rawHeightMm) }} mm</b></div>
-            <div><span>裁切尺寸</span><b>上 {{ f1(p.widthTopMm) }} / 下 {{ f1(p.widthBottomMm) }} × 高 {{ f1(p.heightMm) }} mm</b></div>
+            <div v-if="p.polySides"><span>净尺寸</span><b>净对边距 {{ f1(p.rawWidthTopMm) }} mm</b></div>
+            <div v-else-if="p.shape === 'circle'"><span>净尺寸</span><b>净直径 {{ f1(p.rawWidthTopMm) }} mm</b></div>
+            <div v-else><span>净尺寸</span><b>上 {{ f1(p.rawWidthTopMm) }} / 下 {{ f1(p.rawWidthBottomMm) }} × 高 {{ f1(p.rawHeightMm) }} mm</b></div>
+            <div v-if="p.polySides"><span>裁切尺寸</span><b>裁切对边距 {{ f1(p.widthTopMm) }} mm（净对边距 + 缝份×2）</b></div>
+            <div v-else-if="p.shape === 'circle'"><span>裁切尺寸</span><b>裁切直径 {{ f1(p.widthTopMm) }} mm（净直径 + 缝份×2）</b></div>
+            <div v-else><span>裁切尺寸</span><b>上 {{ f1(p.widthTopMm) }} / 下 {{ f1(p.widthBottomMm) }} × 高 {{ f1(p.heightMm) }} mm</b></div>
             <div><span>缝份</span><b>四边各 {{ p.seamAllowanceMm }}mm（已计入裁切尺寸）</b></div>
             <div>
               <span>位置 / 配色</span><b>{{ p.layerIndex >= 0 ? `第 ${p.layerIndex + 1} 层` : '顶/底盖' }} · {{ p.color }}</b>

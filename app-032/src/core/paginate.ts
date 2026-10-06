@@ -154,13 +154,15 @@ export function paginate(l: Lantern, opts: LoftOptions): Sheet[] {
 
   if (opts.includePanels) {
     for (const p of buildPanels(l).panels) {
-      const w = p.widthTopMm + PANEL_PAD_X * 2
-      const h = p.heightMm + PANEL_PAD_BOTTOM
+      // 正多边形盖片的角部超出对边距（外接圆方向），占位按外接圆直径，避免角部画出页/压到相邻裁片
+      const spanMm = p.polySides ? p.widthTopMm / Math.cos(Math.PI / p.polySides) : Math.max(p.widthTopMm, p.widthBottomMm)
+      const w = spanMm + PANEL_PAD_X * 2
+      const h = (p.polySides ? spanMm : p.heightMm) + PANEL_PAD_BOTTOM
       if (w > contentW + EPS || h > contentH + EPS) {
         // 超出可打印区：整块单独一页居中输出，绝不拆分
         dropEmptySheet()
         const s = startSheet(
-          `裁片「${p.label}」裁切尺寸 ${f1(p.widthTopMm)}×${f1(p.heightMm)}mm 超出 ${opts.paper} 可打印区（${f1(contentW)}×${f1(contentH)}mm）：已整块居中输出、未拆分，请改用 A3 或按拼接编号手工接纸。`
+          `裁片「${p.label}」裁切尺寸 ${f1(spanMm)}×${f1(p.polySides ? spanMm : p.heightMm)}mm 超出 ${opts.paper} 可打印区（${f1(contentW)}×${f1(contentH)}mm）：已整块居中输出、未拆分，请改用 A3 或按拼接编号手工接纸。`
         )
         s.items.push({
           type: 'panel',

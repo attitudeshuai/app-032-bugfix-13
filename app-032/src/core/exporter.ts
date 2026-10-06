@@ -58,7 +58,7 @@ export function panelsCsv(l: Lantern, panels: Panel[]): string {
     [`蒙面裁片清单 · ${l.name}`],
     [`蒙面 ${coveringSpec(l.covering).name} / 缝份 每边 ${l.seamAllowanceMm}mm（已含在裁片尺寸内）/ 生成 ${new Date().toLocaleString()}`],
     [],
-    ['裁片编号', '名称', '形状', '净上宽(mm)', '净下宽(mm)', '净高(mm)', '裁切上宽(mm)', '裁切下宽(mm)', '裁切高(mm)', '半径/对边(mm)', '数量', '对位标记数']
+    ['裁片编号', '名称', '形状', '净上宽/净直径/净对边距(mm)', '净下宽(mm)', '净高(mm)', '裁切上宽/裁切直径/裁切对边距(mm)', '裁切下宽(mm)', '裁切高(mm)', '净外接圆半径(mm)', '数量', '对位标记数']
   ]
   for (const p of panels) {
     rows.push([
